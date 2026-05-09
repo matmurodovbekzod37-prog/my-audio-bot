@@ -65,8 +65,12 @@ async def cmd_start(message: Message, bot: Bot):
 
     text = (
         f"Assalomu alaykum, {message.from_user.first_name}! 👋\n\n"
-        f"Men YouTube, Instagram va TikTok videolarni yuklab beruvchi botman.\n\n"
-        f"📥 Menga shunchaki video havolasini (link) yuboring!"
+        "Men sizga media fayllarni yuklash va musiqalarni topishda yordam beraman.\n\n"
+        "✨ **Imkoniyatlarim:**\n"
+        "🔗 **Link yuboring** - Instagram, YouTube, TikTok-dan MP3 yuklayman.\n"
+        "🔍 **Musiqa nomi** - Istalgan qo'shiq nomini yozing, men topaman.\n"
+        "🎧 **Ovozli xabar** - Musiqa parchasini yuboring, men taniyman (Shazam).\n\n"
+        "📥 Boshlash uchun biron narsa yuboring!"
     )
     await message.answer(text, reply_markup=get_main_menu())
 
@@ -74,7 +78,17 @@ async def cmd_start(message: Message, bot: Bot):
 async def process_check_sub(callback: CallbackQuery, bot: Bot):
     if await check_subscription(bot, callback.from_user.id):
         await callback.message.edit_text("✅ Raxmat! Endi botdan foydalanishingiz mumkin.")
-        await cmd_start(callback.message, bot)
+        # Yangi start xabarini ko'rsatish
+        text = (
+            f"Assalomu alaykum, {callback.from_user.first_name}! 👋\n\n"
+            "Men sizga media fayllarni yuklash va musiqalarni topishda yordam beraman.\n\n"
+            "✨ **Imkoniyatlarim:**\n"
+            "🔗 **Link yuboring** - Instagram, YouTube, TikTok-dan MP3 yuklayman.\n"
+            "🔍 **Musiqa nomi** - Istalgan qo'shiq nomini yozing, men topaman.\n"
+            "🎧 **Ovozli xabar** - Musiqa parchasini yuboring, men taniyman (Shazam).\n\n"
+            "📥 Boshlash uchun biron narsa yuboring!"
+        )
+        await callback.message.answer(text, reply_markup=get_main_menu())
     else:
         await callback.answer("❌ Siz hali obuna bo'lmagansiz!", show_alert=True)
 
@@ -82,11 +96,10 @@ async def process_check_sub(callback: CallbackQuery, bot: Bot):
 async def process_help(callback: CallbackQuery):
     text = (
         "📖 *Yordam*\n\n"
-        "1. Menga video joylashgan URL manzilni yuboring.\n"
-        "2. Men sizdan Audio (MP3) yoki Video (MP4) formatni tanlashni so'rayman.\n"
-        "3. Tanlaganingizdan so'ng faylni yuklab olib, sizga jo'nataman.\n\n"
-        "⚠️ *Eslatma:* Telegram botlar uchun fayl yuklash hajmi 50MB bilan cheklangan. "
-        "Agar video yoki audio hajmi kattaroq bo'lsa, xatolik yuz berishi mumkin."
+        "1. **Link orqali:** Instagram, YouTube yoki TikTok havolasini yuboring.\n"
+        "2. **Qidiruv:** Musiqa nomi yoki ijrochini yozib yuboring (masalan: `Yulduz Usmonova`)\n"
+        "3. **Shazam:** Musiqa eshitilib turgan ovozli xabar yoki audioni yuboring.\n\n"
+        "⚠️ *Eslatma:* Telegram botlar uchun fayl yuklash hajmi 50MB bilan cheklangan."
     )
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
