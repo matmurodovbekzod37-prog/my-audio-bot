@@ -61,11 +61,14 @@ def _download_sync(url: str, format_type: str) -> dict:
         'nocheckcertificate': True,
         'ignoreerrors': False,
         'logtostderr': False,
-        # Cookies borligi uchun standart sozlamalarga qaytamiz
+        'cachedir': False,
+        'no_mtime': True,
+        'ignore_config': True, # Tizim sozlamalarini chetlab o'tish
         'referer': 'https://www.google.com/',
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'android', 'ios'],
+                'player_client': ['web', 'mweb', 'android', 'ios'],
+                'skip': [] # Hech narsani o'tkazib yubormaslik
             }
         }
     }
@@ -79,7 +82,7 @@ def _download_sync(url: str, format_type: str) -> dict:
 
     if format_type == 'audio':
         ydl_opts.update({
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio/best', # Kengaytirilgan formatlar
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -139,10 +142,14 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'no_warnings': True,
         'extract_flat': 'in_playlist',
         'skip_download': True,
+        'cachedir': False,
+        'no_mtime': True,
+        'ignore_config': True,
         'referer': 'https://www.google.com/',
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'android', 'ios'],
+                'player_client': ['web', 'mweb', 'android', 'ios'],
+                'skip': []
             }
         }
     }
