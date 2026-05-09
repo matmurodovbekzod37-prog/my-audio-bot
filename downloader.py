@@ -56,9 +56,23 @@ def _download_sync(url: str, format_type: str) -> dict:
     ydl_opts = {
         'outtmpl': outtmpl,
         'quiet': True,
-        'no_warnings': True,
-        'restrictfilenames': True,  # Fayl nomida muammo bo'lmasligi uchun
+        'no_warnings': False,  # Debug uchun warninglarni ko'rish yaxshi
+        'restrictfilenames': True,
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
+        'logtostderr': False,
+        # Browser kabi ko'rinish uchun headers
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'referer': 'https://www.google.com/',
+        # YouTube blokirovkalarini aylanib o'tish uchun player clientlar
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web'],
+                'skip': ['dash', 'hls']
+            }
+        }
     }
+    
     if cookiefile:
         ydl_opts['cookiefile'] = cookiefile
     
@@ -79,7 +93,6 @@ def _download_sync(url: str, format_type: str) -> dict:
         # Video formati uchun
         ydl_opts.update({
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            # mp4 ga birlashtirish
             'merge_output_format': 'mp4',
         })
 
@@ -129,6 +142,13 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'no_warnings': True,
         'extract_flat': 'in_playlist',
         'skip_download': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'referer': 'https://www.google.com/',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web'],
+            }
+        }
     }
     cookiefile = _get_cookiefile()
     if cookiefile:
