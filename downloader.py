@@ -67,7 +67,7 @@ def _download_sync(url: str, format_type: str) -> dict:
         # YouTube blokirovkalarini aylanib o'tish uchun player clientlar
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'web'],
+                'player_client': ['android', 'ios', 'web_embedded', 'mweb'],
                 'skip': ['dash', 'hls']
             }
         }
@@ -146,7 +146,7 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'referer': 'https://www.google.com/',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'web'],
+                'player_client': ['android', 'ios', 'web_embedded', 'mweb'],
             }
         }
     }
