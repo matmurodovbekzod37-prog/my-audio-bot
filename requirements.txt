@@ -1,0 +1,4 @@
+aiogram==3.17.0
+yt-dlp==2025.01.12
+asyncio==3.4.3
+shazamio==0.5.1

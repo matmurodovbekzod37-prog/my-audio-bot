@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  audiobot:
+    build: .
+    container_name: audiobot_app
+    restart: always
+    volumes:
+      - ./downloads:/app/downloads
+      - ./cookies.txt:/app/cookies.txt
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"
