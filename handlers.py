@@ -5,9 +5,9 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.filters import CommandStart, Command
 from utils import extract_urls
-from downloader import download_media, search_and_download_audio
+from downloader import download_media, get_search_results, download_audio_by_url
 from shazam_utils import recognize_song
-from config import MAX_FILE_SIZE_BYTES, BOT_USERNAME, REQUIRED_CHANNEL_ID, CHANNEL_URL
+from config import MAX_FILE_SIZE_BYTES, BOT_USERNAME, REQUIRED_CHANNEL_ID, CHANNEL_URL, DOWNLOADS_DIR
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -41,6 +41,24 @@ def get_format_menu(url: str):
             InlineKeyboardButton(text="🎬 MP4 (Video)", callback_data="dl_video")
         ]
     ])
+
+# Foydalanuvchi qidiruv natijalarini vaqtinchalik saqlash uchun
+user_searches = {}
+
+def get_search_keyboard(results_count: int):
+    keyboard = []
+    # Raqamli tugmalarni 5 tadan qilib 2 qatorga teramiz
+    row1 = [InlineKeyboardButton(text=str(i+1), callback_data=f"dl_idx_{i}") for i in range(min(5, results_count))]
+    row2 = [InlineKeyboardButton(text=str(i+1), callback_data=f"dl_idx_{i}") for i in range(5, min(10, results_count))]
+    if row1: keyboard.append(row1)
+    if row2: keyboard.append(row2)
+    # Bekor qilish tugmasi
+    keyboard.append([InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_search")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def format_duration(seconds: int) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m}:{s:02d}"
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, bot: Bot):
@@ -95,32 +113,72 @@ async def handle_text(message: Message, bot: Bot):
         url = urls[0]
         sent_message = await message.answer("⏳ **Link tahlil qilinmoqda...**", parse_mode="Markdown")
         result = await download_media(url, 'audio')
-        if result['status'] == 'success':
-            audio = FSInputFile(result['filepath'])
+        if result['success']:
+            audio = FSInputFile(result['file_path'])
             caption = f"🎵 **{result['title']}**\n\n📥 @{BOT_USERNAME} orqali yuklandi"
             await message.answer_audio(audio, caption=caption, parse_mode="Markdown")
             await sent_message.delete()
-            if os.path.exists(result['filepath']): os.remove(result['filepath'])
+            if os.path.exists(result['file_path']): os.remove(result['file_path'])
         else:
-            await sent_message.edit_text(f"❌ **Xatolik:** {result['message']}")
+            await sent_message.edit_text(f"❌ **Xatolik:** {result['error']}")
         return
 
-    # Aqlli qidiruv filtri
+    # Aqlli qidiruv
     query = message.text.strip()
     if len(query) < 3 or query.startswith('/') or query.startswith('.'):
-        await message.answer("❓ **Tushunmadim.** Iltimos, musiqa nomini to'liq yozing yoki link yuboring.")
         return
 
-    sent_message = await message.answer(f"🔍 **'{query}'** qidirilmoqda, iltimos kuting...", parse_mode="Markdown")
-    result = await search_and_download_audio(query)
-    if result['status'] == 'success':
-        audio = FSInputFile(result['filepath'])
-        caption = f"✅ **Topildi:** {result['title']}\n\n🤖 @{BOT_USERNAME}"
-        await message.answer_audio(audio, caption=caption, parse_mode="Markdown")
-        await sent_message.delete()
-        if os.path.exists(result['filepath']): os.remove(result['filepath'])
+    sent_message = await message.answer(f"🔍 **'{query}'** qidirilmoqda...", parse_mode="Markdown")
+    results = await get_search_results(query, 10)
+    
+    if not results:
+        await sent_message.edit_text(f"😔 **'{query}'** bo'yicha hech qanday musiqa topilmadi. Iltimos, nomini tekshirib qayta yozing.")
+        return
+
+    user_searches[message.from_user.id] = results
+    
+    response_text = f"🔍 **'{query}'** bo'yicha topilgan natijalar:\n\n"
+    for i, res in enumerate(results):
+        duration = format_duration(res['duration'])
+        response_text += f"{i+1}. **{res['title']}** ({duration})\n"
+    
+    response_text += "\n📥 Yuklab olish uchun raqamni bosing:"
+    
+    await sent_message.edit_text(
+        response_text, 
+        reply_markup=get_search_keyboard(len(results)),
+        parse_mode="Markdown"
+    )
+
+@router.callback_query(F.data.startswith("dl_idx_"))
+async def process_selection(callback: CallbackQuery, bot: Bot):
+    idx = int(callback.data.replace("dl_idx_", ""))
+    user_id = callback.from_user.id
+    
+    if user_id not in user_searches or idx >= len(user_searches[user_id]):
+        await callback.answer("❌ Qidiruv natijasi muddati o'tgan. Iltimos, qaytadan qidiring.", show_alert=True)
+        return
+
+    selected = user_searches[user_id][idx]
+    await callback.message.edit_text(f"⏳ **{selected['title']}** yuklanmoqda...", parse_mode="Markdown")
+    
+    result = await download_audio_by_url(selected['url'])
+    if result['success']:
+        audio = FSInputFile(result['file_path'])
+        caption = f"✅ **{selected['title']}**\n\n🤖 @{BOT_USERNAME}"
+        await callback.message.answer_audio(audio, caption=caption, parse_mode="Markdown")
+        await callback.message.delete()
+        if os.path.exists(result['file_path']): os.remove(result['file_path'])
     else:
-        await sent_message.edit_text(f"😔 **'{query}'** topilmadi. Boshqacha yozib ko'ring.")
+        err_msg = result.get('error', "Noma'lum")
+        await callback.message.edit_text(f"❌ Xatolik yuz berdi: {err_msg}")
+
+@router.callback_query(F.data == "cancel_search")
+async def cancel_search(callback: CallbackQuery):
+    if callback.from_user.id in user_searches:
+        del user_searches[callback.from_user.id]
+    await callback.message.delete()
+    await callback.answer("Qidiruv bekor qilindi.")
 
 @router.message(F.voice | F.audio)
 async def handle_audio(message: Message, bot: Bot):
@@ -140,15 +198,27 @@ async def handle_audio(message: Message, bot: Bot):
 
     if shazam_result['status'] == 'success':
         title = shazam_result['title']
-        subtitle = shazam_result['subtitle']
-        await sent_message.edit_text(f"✅ **Topildi!**\n\n🎼 **Nomi:** {title}\n👤 **Ijrochi:** {subtitle}\n\n⏳ Endi uni yuklab beraman...")
+        subtitle = shazam_result['artist']
+        query = f"{title} {subtitle}"
         
-        result = await search_and_download_audio(f"{title} {subtitle}")
-        if result['status'] == 'success':
-            audio = FSInputFile(result['filepath'])
-            await message.answer_audio(audio, caption=f"✨ **{title}** - {subtitle}\n\n📥 @{BOT_USERNAME}")
-            if os.path.exists(result['filepath']): os.remove(result['filepath'])
-        else:
-            await message.answer(f"😔 Kechirasiz, musiqani topdimu, lekin yuklashda xato bo'ldi.")
+        await sent_message.edit_text(f"✅ **Topildi!**\n\n🎼 **Nomi:** {title}\n👤 **Ijrochi:** {subtitle}\n\n🔍 Eng yaxshi versiyalarni qidiryapman...")
+        
+        results = await get_search_results(query, 10)
+        if not results:
+            await sent_message.edit_text(f"😔 Musiqani topdim ({title}), lekin yuklash uchun manba topilmadi.")
+            return
+
+        user_searches[message.from_user.id] = results
+        
+        response_text = f"✅ **Tanildi:** {title} - {subtitle}\n\n📥 Yuklash uchun versiyani tanlang:\n"
+        for i, res in enumerate(results):
+            duration = format_duration(res['duration'])
+            response_text += f"{i+1}. **{res['title']}** ({duration})\n"
+        
+        await sent_message.edit_text(
+            response_text,
+            reply_markup=get_search_keyboard(len(results)),
+            parse_mode="Markdown"
+        )
     else:
         await sent_message.edit_text("❌ **Musiqa tanilmadi.** Ovoz baland va aniqroq bo'lishiga e'tibor bering.")
