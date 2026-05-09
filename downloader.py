@@ -64,11 +64,9 @@ def _download_sync(url: str, format_type: str) -> dict:
         # Browser kabi ko'rinish uchun headers
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'referer': 'https://www.google.com/',
-        # YouTube blokirovkalarini aylanib o'tish uchun player clientlar
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'ios', 'web_embedded', 'mweb'],
-                'skip': ['dash', 'hls']
             }
         }
     }
