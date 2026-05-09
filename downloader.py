@@ -30,7 +30,8 @@ def _get_js_runtime() -> dict | None:
 
 def _make_ydl_opts(outtmpl: str) -> dict:
     return {
-        'format': 'bestaudio/best',
+       'format': 'bestaudio/ba/b',
+
         'outtmpl': outtmpl,
         'quiet': True,
         'no_warnings': True,
