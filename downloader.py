@@ -68,7 +68,7 @@ def _download_sync(url: str, format_type: str) -> dict:
         'ignore_config': True,
         # Yangilangan User-Agent
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'referer': 'https://www.google.com/',
+        'referer': 'https://soundcloud.com/',
         'extractor_args': {
             'youtube': {
                 # Faqat ishonchli mijozlarni qoldiramiz
@@ -167,6 +167,8 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'ignore_config': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'referer': 'https://soundcloud.com/',
     }
     
     js_runtime = _get_js_runtime()

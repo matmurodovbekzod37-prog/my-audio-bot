@@ -1,5 +1,4 @@
 aiogram
-yt-dlp
+yt-dlp>=2025.1.15
 shazamio
 aiohttp
-uuid
