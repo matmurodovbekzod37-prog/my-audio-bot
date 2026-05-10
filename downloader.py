@@ -167,14 +167,6 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'ignore_config': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'ios', 'mweb'],
-                'player_skip': ['webpage']
-            }
-        },
-        'youtube_include_dash_manifest': False,
-        'youtube_include_hls_manifest': False,
     }
     
     js_runtime = _get_js_runtime()
@@ -184,20 +176,8 @@ def _get_search_results_sync(query: str, limit: int) -> list:
     results = []
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # YouTube dan qidirish
-            yt_info = ydl.extract_info(f"ytsearch{limit//2}:{query}", download=False)
-            if 'entries' in yt_info:
-                for entry in yt_info['entries']:
-                    if entry:
-                        results.append({
-                            'id': entry.get('id'),
-                            'title': f"📺 {entry.get('title')}",
-                            'url': entry.get('url') or entry.get('webpage_url'),
-                            'duration': entry.get('duration', 0),
-                        })
-            
-            # SoundCloud dan qidirish (Cheklovlar yo'q!)
-            sc_info = ydl.extract_info(f"scsearch{limit//2}:{query}", download=False)
+            # Faqat SoundCloud dan qidirish (Cheklovlar yo'q va barqaror)
+            sc_info = ydl.extract_info(f"scsearch{limit}:{query}", download=False)
             if 'entries' in sc_info:
                 for entry in sc_info['entries']:
                     if entry:
@@ -211,6 +191,7 @@ def _get_search_results_sync(query: str, limit: int) -> list:
     except Exception as e:
         logger.error(f"Search error: {e}")
         return results
+
 
 async def download_audio_by_url(url: str) -> dict:
     """Aniq URL orqali audio yuklash."""
