@@ -56,33 +56,34 @@ def _download_sync(url: str, format_type: str) -> dict:
     ydl_opts = {
         'outtmpl': outtmpl,
         'quiet': True,
-        'no_warnings': False,
+        'no_warnings': True,
         'restrictfilenames': True,
         'nocheckcertificate': True,
-        'ignoreerrors': False,
+        'ignoreerrors': True, # Xatolik bo'lsa ham davom etish
         'logtostderr': False,
         'cachedir': False,
+        'check_formats': False,
         'no_mtime': True,
-        'ignore_config': True, # Tizim sozlamalarini chetlab o'tish
+        'ignore_config': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'referer': 'https://www.google.com/',
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'mweb', 'android', 'ios'],
-                'skip': [] # Hech narsani o'tkazib yubormaslik
+                'player_client': ['tv', 'tv_embedded', 'android', 'ios', 'web', 'mweb'],
+                'skip': ['webpage']
             }
-        }
+        },
+        'youtube_include_dash_manifest': False,
+        'youtube_include_hls_manifest': False,
     }
     
     if cookiefile:
         ydl_opts['cookiefile'] = cookiefile
-    
-    js_runtime = _get_js_runtime()
-    if js_runtime:
-        ydl_opts['js_runtimes'] = js_runtime
 
     if format_type == 'audio':
         ydl_opts.update({
-            'format': 'bestaudio[ext=m4a]/bestaudio/best', # Kengaytirilgan formatlar
+            'format': 'ba/ba*', # Eng ishonchli format
+            'format_sort': ['abr:192', 'acodec:mp3'], # Sifat bo'yicha tartiblash
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -90,29 +91,39 @@ def _download_sync(url: str, format_type: str) -> dict:
             }],
         })
     else:
-        # Video formati uchun
         ydl_opts.update({
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'merge_output_format': 'mp4',
         })
 
+    js_runtime = _get_js_runtime()
+    if js_runtime:
+        ydl_opts['js_runtimes'] = js_runtime
+
     try:
         with YoutubeDL(ydl_opts) as ydl:
+            # Avval ma'lumotni olish va yuklash
             info = ydl.extract_info(url, download=True)
             
-            # Fayl nomini olish
+            if not info:
+                # Agar kuki bilan xato bo'lsa, kukisiz sinab ko'ramiz
+                logger.warning("Kukisiz qayta urinish...")
+                ydl_opts.pop('cookiefile', None)
+                with YoutubeDL(ydl_opts) as ydl_no_cookies:
+                    info = ydl_no_cookies.extract_info(url, download=True)
+            
+            if not info:
+                raise Exception("Media ma'lumotlarini olib bo'lmadi")
+
+            # Fayl nomini aniqlash
+            filename = ydl.prepare_filename(info)
             if format_type == 'audio':
-                # ydl_opts dagi ext 'mp3' ga aylanadi
-                filename = ydl.prepare_filename(info)
-                # FFmpegExtractAudio asl fayl nomidagi kengaytmani mp3 ga o'zgartiradi
-                base, ext = os.path.splitext(filename)
+                base, _ = os.path.splitext(filename)
                 expected_filename = base + '.mp3'
                 if os.path.exists(expected_filename):
                     filename = expected_filename
             else:
-                filename = ydl.prepare_filename(info)
                 base, _ = os.path.splitext(filename)
-                # merge_output_format 'mp4' ga o'zgartirishi mumkin
                 expected_filename = base + '.mp4'
                 if os.path.exists(expected_filename):
                     filename = expected_filename
@@ -120,20 +131,15 @@ def _download_sync(url: str, format_type: str) -> dict:
             return {
                 'success': True,
                 'file_path': filename,
-                'title': info.get('title', 'Noma\'lum video'),
-                'duration': info.get('duration', 0)
+                'title': info.get('title', 'Noma\'lum'),
+                'duration': info.get('duration', 0),
+                'id': info.get('id')
             }
     except Exception as e:
-        logger.error(f"Yuklab olishda xatolik: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        logger.error(f"Download error: {e}")
+        return {'success': False, 'error': str(e)}
 
 async def get_search_results(query: str, limit: 10) -> list:
-    """
-    Qidiruv natijalarini ma'lumot ko'rinishida qaytaradi (yuklamaydi).
-    """
     return await asyncio.to_thread(_get_search_results_sync, query, limit)
 
 def _get_search_results_sync(query: str, limit: int) -> list:
@@ -142,46 +148,51 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'no_warnings': True,
         'extract_flat': 'in_playlist',
         'skip_download': True,
-        'cachedir': False,
-        'no_mtime': True,
         'ignore_config': True,
-        'referer': 'https://www.google.com/',
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'mweb', 'android', 'ios'],
-                'skip': []
+                'player_client': ['tv', 'tv_embedded', 'android', 'ios', 'web', 'mweb'],
+                'skip': ['webpage']
             }
-        }
+        },
+        'youtube_include_dash_manifest': False,
+        'youtube_include_hls_manifest': False,
     }
-    cookiefile = _get_cookiefile()
-    if cookiefile:
-        ydl_opts['cookiefile'] = cookiefile
     
     js_runtime = _get_js_runtime()
     if js_runtime:
         ydl_opts['js_runtimes'] = js_runtime
-
+    
+    results = []
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # YouTube va SoundCloud dan qidirish
-            search_query = f"ytsearch{limit}:{query}"
-            info = ydl.extract_info(search_query, download=False)
+            # YouTube dan qidirish
+            yt_info = ydl.extract_info(f"ytsearch{limit//2}:{query}", download=False)
+            if 'entries' in yt_info:
+                for entry in yt_info['entries']:
+                    if entry:
+                        results.append({
+                            'id': entry.get('id'),
+                            'title': f"📺 {entry.get('title')}",
+                            'url': entry.get('url') or entry.get('webpage_url'),
+                            'duration': entry.get('duration', 0),
+                        })
             
-            results = []
-            if 'entries' in info:
-                for entry in info['entries']:
-                    if not entry: continue
-                    results.append({
-                        'id': entry.get('id'),
-                        'title': entry.get('title', 'Noma\'lum'),
-                        'url': entry.get('url') or entry.get('webpage_url'),
-                        'duration': entry.get('duration', 0),
-                        'thumbnail': entry.get('thumbnail'),
-                    })
-            return results
+            # SoundCloud dan qidirish (Cheklovlar yo'q!)
+            sc_info = ydl.extract_info(f"scsearch{limit//2}:{query}", download=False)
+            if 'entries' in sc_info:
+                for entry in sc_info['entries']:
+                    if entry:
+                        results.append({
+                            'id': entry.get('id'),
+                            'title': f"☁️ {entry.get('title')}",
+                            'url': entry.get('url') or entry.get('webpage_url'),
+                            'duration': entry.get('duration', 0),
+                        })
+        return results
     except Exception as e:
         logger.error(f"Search error: {e}")
-        return []
+        return results
 
 async def download_audio_by_url(url: str) -> dict:
     """Aniq URL orqali audio yuklash."""

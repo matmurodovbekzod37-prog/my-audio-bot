@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart, Command
 from utils import extract_urls
 from downloader import download_media, get_search_results, download_audio_by_url
 from shazam_utils import recognize_song
+from database import db_cache
 from config import MAX_FILE_SIZE_BYTES, BOT_USERNAME, REQUIRED_CHANNEL_ID, CHANNEL_URL, DOWNLOADS_DIR
 
 router = Router()
@@ -112,11 +113,48 @@ async def handle_text(message: Message, bot: Bot):
     if urls:
         url = urls[0]
         sent_message = await message.answer("⏳ **Link tahlil qilinmoqda...**", parse_mode="Markdown")
+        
+        # Odatda YouTube linklaridan ID ajratib olish foydali
+        video_id = None
+        if "youtube.com" in url or "youtu.be" in url:
+            import re
+            match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
+            if match:
+                video_id = match.group(1)
+        
+        if video_id:
+            cached_data = db_cache.get_file_id(video_id)
+            if cached_data:
+                try:
+                    await sent_message.edit_text(f"⚡️ **{cached_data.get('title', 'Musiqa')}** keshdan yuborilmoqda...")
+                    await message.answer_audio(
+                        cached_data['file_id'],
+                        caption=f"✅ **{cached_data.get('title', 'Musiqa')}**\n\n⚡️ Tezkor yuklash (keshdan)\n🤖 @{BOT_USERNAME}"
+                    )
+                    await sent_message.delete()
+                    return
+                except Exception as e:
+                    logger.warning(f"Link keshidan yuborishda xato: {e}")
+
         result = await download_media(url, 'audio')
         if result['success']:
-            audio = FSInputFile(result['file_path'])
+            file_path = result['file_path']
+            # Fayl hajmini tekshirish
+            file_size = os.path.getsize(file_path)
+            if file_size > MAX_FILE_SIZE_BYTES:
+                await sent_message.edit_text(f"⚠️ **Fayl juda katta!** ({file_size / (1024*1024):.1f} MB)\nTelegram botlar orqali faqat 50MB gacha bo'lgan fayllarni yuborish mumkin.")
+                if os.path.exists(file_path): os.remove(file_path)
+                return
+
+            audio = FSInputFile(file_path)
             caption = f"🎵 **{result['title']}**\n\n📥 @{BOT_USERNAME} orqali yuklandi"
-            await message.answer_audio(audio, caption=caption, parse_mode="Markdown")
+            msg = await message.answer_audio(audio, caption=caption, parse_mode="Markdown")
+            
+            # Keshga saqlash (agar video_id bo'lmasa, downloader qaytargan ID dan foydalanamiz)
+            final_id = video_id or result.get('id')
+            if final_id and msg.audio:
+                db_cache.set_file_id(final_id, msg.audio.file_id, result['title'])
+                
             await sent_message.delete()
             if os.path.exists(result['file_path']): os.remove(result['file_path'])
         else:
@@ -160,13 +198,43 @@ async def process_selection(callback: CallbackQuery, bot: Bot):
         return
 
     selected = user_searches[user_id][idx]
+    video_id = selected.get('id')
+    
+    # Keshni tekshirish
+    cached_data = db_cache.get_file_id(video_id) if video_id else None
+    if cached_data:
+        try:
+            await callback.message.edit_text(f"⚡️ **{selected['title']}** keshdan yuborilmoqda...")
+            await callback.message.answer_audio(
+                cached_data['file_id'], 
+                caption=f"✅ **{selected['title']}**\n\n⚡️ Tezkor yuklash (keshdan)\n🤖 @{BOT_USERNAME}"
+            )
+            await callback.message.delete()
+            return
+        except Exception as e:
+            logger.warning(f"Keshdan yuborishda xato (ehtimol file_id eskirgan): {e}")
+            # Agar keshdan yuborish o'xshamasa, oddiy yuklashga o'tadi
+
     await callback.message.edit_text(f"⏳ **{selected['title']}** yuklanmoqda...", parse_mode="Markdown")
     
     result = await download_audio_by_url(selected['url'])
     if result['success']:
-        audio = FSInputFile(result['file_path'])
+        file_path = result['file_path']
+        # Fayl hajmini tekshirish
+        file_size = os.path.getsize(file_path)
+        if file_size > MAX_FILE_SIZE_BYTES:
+            await callback.message.edit_text(f"⚠️ **Fayl juda katta!** ({file_size / (1024*1024):.1f} MB)\nTelegram botlar orqali faqat 50MB gacha bo'lgan fayllarni yuborish mumkin.")
+            if os.path.exists(file_path): os.remove(file_path)
+            return
+
+        audio = FSInputFile(file_path)
         caption = f"✅ **{selected['title']}**\n\n🤖 @{BOT_USERNAME}"
-        await callback.message.answer_audio(audio, caption=caption, parse_mode="Markdown")
+        msg = await callback.message.answer_audio(audio, caption=caption, parse_mode="Markdown")
+        
+        # Kelajak uchun keshga saqlash
+        if video_id and msg.audio:
+            db_cache.set_file_id(video_id, msg.audio.file_id, selected['title'])
+            
         await callback.message.delete()
         if os.path.exists(result['file_path']): os.remove(result['file_path'])
     else:
