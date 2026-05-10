@@ -162,6 +162,7 @@ async def get_search_results(query: str, limit: 10) -> list:
     return await asyncio.to_thread(_get_search_results_sync, query, limit)
 
 def _get_search_results_sync(query: str, limit: int) -> list:
+    cookiefile = _get_cookiefile()
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -170,6 +171,9 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     }
     
+    if cookiefile:
+        ydl_opts['cookiefile'] = cookiefile
+    
     js_runtime = _get_js_runtime()
     if js_runtime:
         ydl_opts['js_runtimes'] = js_runtime
@@ -177,33 +181,40 @@ def _get_search_results_sync(query: str, limit: int) -> list:
     results = []
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # YouTube dan qidirish (2 ta natija)
-            yt_info = ydl.extract_info(f"ytsearch2:{query}", download=False)
-            if 'entries' in yt_info:
-                for entry in yt_info['entries']:
-                    if entry:
-                        results.append({
-                            'id': entry.get('id'),
-                            'title': f"📺 {entry.get('title')}",
-                            'url': entry.get('url') or entry.get('webpage_url'),
-                            'duration': entry.get('duration', 0),
-                        })
+            # YouTube dan qidirish
+            try:
+                yt_info = ydl.extract_info(f"ytsearch2:{query}", download=False)
+                if yt_info and 'entries' in yt_info:
+                    for entry in yt_info['entries']:
+                        if entry:
+                            results.append({
+                                'id': entry.get('id'),
+                                'title': f"📺 {entry.get('title')}",
+                                'url': entry.get('url') or entry.get('webpage_url'),
+                                'duration': entry.get('duration', 0),
+                            })
+            except Exception as e:
+                logger.warning(f"YouTube search error: {e}")
             
-            # SoundCloud dan qidirish (8 ta natija)
-            sc_info = ydl.extract_info(f"scsearch{limit-2}:{query}", download=False)
-            if 'entries' in sc_info:
-                for entry in sc_info['entries']:
-                    if entry and (entry.get('url') or entry.get('webpage_url')):
-                        results.append({
-                            'id': entry.get('id'),
-                            'title': f"☁️ {entry.get('title')}",
-                            'url': entry.get('url') or entry.get('webpage_url'),
-                            'duration': entry.get('duration', 0),
-                        })
+            # SoundCloud dan qidirish
+            try:
+                sc_info = ydl.extract_info(f"scsearch{limit-2}:{query}", download=False)
+                if sc_info and 'entries' in sc_info:
+                    for entry in sc_info['entries']:
+                        if entry and (entry.get('url') or entry.get('webpage_url')):
+                            results.append({
+                                'id': entry.get('id'),
+                                'title': f"☁️ {entry.get('title')}",
+                                'url': entry.get('url') or entry.get('webpage_url'),
+                                'duration': entry.get('duration', 0),
+                            })
+            except Exception as e:
+                logger.warning(f"SoundCloud search error: {e}")
         return results
     except Exception as e:
-        logger.error(f"Search error: {e}")
+        logger.error(f"Search engine error: {e}")
         return results
+
 
 
 
