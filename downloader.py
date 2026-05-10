@@ -152,7 +152,7 @@ def _download_sync(url: str, format_type: str) -> dict:
         elif "Video unavailable" in err_str:
             friendly_err = "Video o'chirilgan yoki bloklangan."
         else:
-            friendly_err = f"Xatolik yuz berdi: {err_str[:100]}"
+            friendly_err = f"{err_str[:100]}"
             
         return {'success': False, 'error': friendly_err}
 
@@ -180,7 +180,7 @@ def _get_search_results_sync(query: str, limit: int) -> list:
             sc_info = ydl.extract_info(f"scsearch{limit}:{query}", download=False)
             if 'entries' in sc_info:
                 for entry in sc_info['entries']:
-                    if entry:
+                    if entry and (entry.get('url') or entry.get('webpage_url')):
                         results.append({
                             'id': entry.get('id'),
                             'title': f"☁️ {entry.get('title')}",
