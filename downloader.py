@@ -53,24 +53,27 @@ def _download_sync(url: str, format_type: str) -> dict:
     outtmpl = os.path.join(DOWNLOADS_DIR, '%(title)s.%(ext)s')
     
     cookiefile = _get_cookiefile()
+    # Bazaviy sozlamalar
     ydl_opts = {
         'outtmpl': outtmpl,
         'quiet': True,
         'no_warnings': True,
         'restrictfilenames': True,
         'nocheckcertificate': True,
-        'ignoreerrors': True, # Xatolik bo'lsa ham davom etish
+        'ignoreerrors': False, # Xatolikni tutish uchun False qilamiz
         'logtostderr': False,
         'cachedir': False,
         'check_formats': False,
         'no_mtime': True,
         'ignore_config': True,
+        # Yangilangan User-Agent
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'referer': 'https://www.google.com/',
         'extractor_args': {
             'youtube': {
-                'player_client': ['tv', 'tv_embedded', 'android', 'ios', 'web', 'mweb'],
-                'skip': ['webpage']
+                # Faqat ishonchli mijozlarni qoldiramiz
+                'player_client': ['android', 'ios', 'mweb'],
+                'player_skip': ['webpage'] # Ma'lumot olishda xatolikni kamaytiradi
             }
         },
         'youtube_include_dash_manifest': False,
@@ -82,8 +85,8 @@ def _download_sync(url: str, format_type: str) -> dict:
 
     if format_type == 'audio':
         ydl_opts.update({
-            'format': 'ba/ba*', # Eng ishonchli format
-            'format_sort': ['abr:192', 'acodec:mp3'], # Sifat bo'yicha tartiblash
+            'format': 'ba/ba*',
+            'format_sort': ['abr:192', 'acodec:mp3'],
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -102,18 +105,20 @@ def _download_sync(url: str, format_type: str) -> dict:
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # Avval ma'lumotni olish va yuklash
-            info = ydl.extract_info(url, download=True)
-            
-            if not info:
+            try:
+                info = ydl.extract_info(url, download=True)
+            except Exception as e:
                 # Agar kuki bilan xato bo'lsa, kukisiz sinab ko'ramiz
-                logger.warning("Kukisiz qayta urinish...")
-                ydl_opts.pop('cookiefile', None)
-                with YoutubeDL(ydl_opts) as ydl_no_cookies:
-                    info = ydl_no_cookies.extract_info(url, download=True)
+                if cookiefile:
+                    logger.warning(f"Kuki bilan xato ({e}), kukisiz urinib ko'ramiz...")
+                    ydl_opts.pop('cookiefile', None)
+                    with YoutubeDL(ydl_opts) as ydl_no_cookies:
+                        info = ydl_no_cookies.extract_info(url, download=True)
+                else:
+                    raise e
             
             if not info:
-                raise Exception("Media ma'lumotlarini olib bo'lmadi")
+                raise Exception("Media ma'lumotlarini olish imkoni bo'lmadi")
 
             # Fayl nomini aniqlash
             filename = ydl.prepare_filename(info)
@@ -136,8 +141,21 @@ def _download_sync(url: str, format_type: str) -> dict:
                 'id': info.get('id')
             }
     except Exception as e:
-        logger.error(f"Download error: {e}")
-        return {'success': False, 'error': str(e)}
+        err_str = str(e)
+        logger.error(f"Download error: {err_str}")
+        
+        # Foydalanuvchiga tushunarli xato xabari
+        if "Sign in to confirm" in err_str:
+            friendly_err = "YouTube bot ekanligimizni aniqladi. Iltimos, cookies.txt faylini yangilang."
+        elif "Requested format not available" in err_str:
+            friendly_err = "Ushbu formatdagi fayl topilmadi. Boshqa versiyani sinab ko'ring."
+        elif "Video unavailable" in err_str:
+            friendly_err = "Video o'chirilgan yoki bloklangan."
+        else:
+            friendly_err = f"Xatolik yuz berdi: {err_str[:100]}"
+            
+        return {'success': False, 'error': friendly_err}
+
 
 async def get_search_results(query: str, limit: 10) -> list:
     return await asyncio.to_thread(_get_search_results_sync, query, limit)
@@ -151,8 +169,8 @@ def _get_search_results_sync(query: str, limit: int) -> list:
         'ignore_config': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['tv', 'tv_embedded', 'android', 'ios', 'web', 'mweb'],
-                'skip': ['webpage']
+                'player_client': ['android', 'ios', 'mweb'],
+                'player_skip': ['webpage']
             }
         },
         'youtube_include_dash_manifest': False,
