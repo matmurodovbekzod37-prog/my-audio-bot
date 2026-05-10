@@ -78,7 +78,7 @@ async def cmd_start(message: Message, bot: Bot):
         "✨ **Imkoniyatlarim:**\n"
         "🔍 **Musiqa nomi** - Istalgan qo'shiq nomini yozing, men topaman.\n"
         "🎧 **Ovozli xabar** - Musiqa parchasini yuboring, men taniyman (Shazam).\n"
-        "🔗 **Link yuboring** - Instagram, TikTok va SoundCloud havolalarini yuklayman.\n\n"
+        "🔗 **Link yuboring** - Instagram, YouTube, TikTok va SoundCloud havolalarini yuklayman.\n\n"
         "📥 Boshlash uchun biron narsa yuboring!"
     )
     await message.answer(text, reply_markup=get_main_menu())
@@ -96,9 +96,9 @@ async def process_help(callback: CallbackQuery):
     text = (
         "📖 **Yordam va Qo'llanma**\n\n"
         "1. **Qidiruv:** Musiqa nomi yoki ijrochini yozib yuboring (masalan: `Yulduz Usmonova`)\n"
-        "2. **Link orqali:** Instagram, TikTok yoki SoundCloud havolasini yuboring.\n"
+        "2. **Link orqali:** Instagram, YouTube, TikTok yoki SoundCloud havolasini yuboring.\n"
         "3. **Shazam:** Musiqa eshitilib turgan ovozli xabar yoki audioni yuboring.\n\n"
-        "⚠️ **YouTube:** Hozirda YouTube'dan yuklash to'xtatilgan, iltimos qidiruvdan foydalaning."
+        "⚠️ **Eslatma:** Telegram botlar uchun fayl yuklash hajmi 50MB bilan cheklangan."
     )
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
@@ -114,13 +114,27 @@ async def handle_text(message: Message, bot: Bot):
         url = urls[0]
         sent_message = await message.answer("⏳ **Link tahlil qilinmoqda...**", parse_mode="Markdown")
         
-        # YouTube linklarini tekshirish
+        # YouTube linklaridan ID ajratib olish
+        video_id = None
         if "youtube.com" in url or "youtu.be" in url:
-            await sent_message.edit_text("⚠️ **YouTube linklari hozircha o'chirilgan.**\nIltimos, qo'shiq nomini yozib qidiring (Cloud orqali yuklanadi).")
-            return
+            import re
+            match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
+            if match:
+                video_id = match.group(1)
         
-        # YouTube keshidan tekshirish (o'chirilgan bo'lsa ham keshdan yuborish mumkin)
-        # Lekin video_id aniqlanmagani uchun bu qism hozircha ishlamaydi
+        if video_id:
+            cached_data = db_cache.get_file_id(video_id)
+            if cached_data:
+                try:
+                    await sent_message.edit_text(f"⚡️ **{cached_data.get('title', 'Musiqa')}** keshdan yuborilmoqda...")
+                    await message.answer_audio(
+                        cached_data['file_id'],
+                        caption=f"✅ **{cached_data.get('title', 'Musiqa')}**\n\n⚡️ Tezkor yuklash (keshdan)\n🤖 @{BOT_USERNAME}"
+                    )
+                    await sent_message.delete()
+                    return
+                except Exception as e:
+                    logger.warning(f"Link keshidan yuborishda xato: {e}")
 
         result = await download_media(url, 'audio')
         if result['success']:
@@ -137,7 +151,7 @@ async def handle_text(message: Message, bot: Bot):
             msg = await message.answer_audio(audio, caption=caption, parse_mode="Markdown")
             
             # Keshga saqlash
-            final_id = result.get('id')
+            final_id = video_id or result.get('id')
             if final_id and msg.audio:
                 db_cache.set_file_id(final_id, msg.audio.file_id, result['title'])
                 
@@ -161,7 +175,7 @@ async def handle_text(message: Message, bot: Bot):
 
     user_searches[message.from_user.id] = results
     
-    response_text = f"🔍 **'{query}'** bo'yicha topilgan natijalar (Cloud ☁️):\n\n"
+    response_text = f"🔍 **'{query}'** bo'yicha topilgan natijalar:\n\n"
     for i, res in enumerate(results):
         duration = format_duration(res['duration'])
         response_text += f"{i+1}. **{res['title']}** ({duration})\n"

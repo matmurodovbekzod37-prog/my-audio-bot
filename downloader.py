@@ -52,6 +52,13 @@ def _download_sync(url: str, format_type: str) -> dict:
     # Saqlash manzili va fayl nomi shabloni
     outtmpl = os.path.join(DOWNLOADS_DIR, '%(title)s.%(ext)s')
     
+    # URL ga qarab referer tanlash
+    referer = "https://www.google.com/"
+    if "soundcloud.com" in url:
+        referer = "https://soundcloud.com/"
+    elif "instagram.com" in url:
+        referer = "https://www.instagram.com/"
+
     cookiefile = _get_cookiefile()
     # Bazaviy sozlamalar
     ydl_opts = {
@@ -60,24 +67,18 @@ def _download_sync(url: str, format_type: str) -> dict:
         'no_warnings': True,
         'restrictfilenames': True,
         'nocheckcertificate': True,
-        'ignoreerrors': False, # Xatolikni tutish uchun False qilamiz
+        'ignoreerrors': False,
         'logtostderr': False,
         'cachedir': False,
-        'check_formats': False,
         'no_mtime': True,
-        'ignore_config': True,
-        # Yangilangan User-Agent
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'referer': 'https://soundcloud.com/',
+        'referer': referer,
         'extractor_args': {
             'youtube': {
-                # Faqat ishonchli mijozlarni qoldiramiz
-                'player_client': ['android', 'ios', 'mweb'],
-                'player_skip': ['webpage'] # Ma'lumot olishda xatolikni kamaytiradi
+                # Faqat eng ishonchli mijoz
+                'player_client': ['android'],
             }
         },
-        'youtube_include_dash_manifest': False,
-        'youtube_include_hls_manifest': False,
     }
     
     if cookiefile:
@@ -164,11 +165,9 @@ def _get_search_results_sync(query: str, limit: int) -> list:
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': 'in_playlist',
         'skip_download': True,
         'ignore_config': True,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'referer': 'https://soundcloud.com/',
     }
     
     js_runtime = _get_js_runtime()
@@ -178,8 +177,20 @@ def _get_search_results_sync(query: str, limit: int) -> list:
     results = []
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # Faqat SoundCloud dan qidirish (Cheklovlar yo'q va barqaror)
-            sc_info = ydl.extract_info(f"scsearch{limit}:{query}", download=False)
+            # YouTube dan qidirish (2 ta natija)
+            yt_info = ydl.extract_info(f"ytsearch2:{query}", download=False)
+            if 'entries' in yt_info:
+                for entry in yt_info['entries']:
+                    if entry:
+                        results.append({
+                            'id': entry.get('id'),
+                            'title': f"📺 {entry.get('title')}",
+                            'url': entry.get('url') or entry.get('webpage_url'),
+                            'duration': entry.get('duration', 0),
+                        })
+            
+            # SoundCloud dan qidirish (8 ta natija)
+            sc_info = ydl.extract_info(f"scsearch{limit-2}:{query}", download=False)
             if 'entries' in sc_info:
                 for entry in sc_info['entries']:
                     if entry and (entry.get('url') or entry.get('webpage_url')):
@@ -193,6 +204,7 @@ def _get_search_results_sync(query: str, limit: int) -> list:
     except Exception as e:
         logger.error(f"Search error: {e}")
         return results
+
 
 
 async def download_audio_by_url(url: str) -> dict:
