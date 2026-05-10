@@ -163,27 +163,28 @@ async def get_search_results(query: str, limit: 10) -> list:
 
 def _get_search_results_sync(query: str, limit: int) -> list:
     cookiefile = _get_cookiefile()
+    # Mobil User-Agent ko'proq ishonchli
+    user_agent = 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36'
+    
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
         'ignore_config': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'user_agent': user_agent,
+        'noprogress': True,
     }
     
     if cookiefile:
         ydl_opts['cookiefile'] = cookiefile
     
-    js_runtime = _get_js_runtime()
-    if js_runtime:
-        ydl_opts['js_runtimes'] = js_runtime
-    
     results = []
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # YouTube dan qidirish
+            # 1. YouTube Qidiruv
             try:
-                yt_info = ydl.extract_info(f"ytsearch2:{query}", download=False)
+                # ytsearch: birinchi natijani tezroq oladi
+                yt_info = ydl.extract_info(f"ytsearch5:{query}", download=False)
                 if yt_info and 'entries' in yt_info:
                     for entry in yt_info['entries']:
                         if entry:
@@ -194,25 +195,27 @@ def _get_search_results_sync(query: str, limit: int) -> list:
                                 'duration': entry.get('duration', 0),
                             })
             except Exception as e:
-                logger.warning(f"YouTube search error: {e}")
-            
-            # SoundCloud dan qidirish
-            try:
-                sc_info = ydl.extract_info(f"scsearch{limit-2}:{query}", download=False)
-                if sc_info and 'entries' in sc_info:
-                    for entry in sc_info['entries']:
-                        if entry and (entry.get('url') or entry.get('webpage_url')):
-                            results.append({
-                                'id': entry.get('id'),
-                                'title': f"☁️ {entry.get('title')}",
-                                'url': entry.get('url') or entry.get('webpage_url'),
-                                'duration': entry.get('duration', 0),
-                            })
-            except Exception as e:
-                logger.warning(f"SoundCloud search error: {e}")
+                logger.warning(f"YT search fail: {e}")
+
+            # 2. SoundCloud Qidiruv (Agar YouTube kam natija bersa yoki xato bo'lsa)
+            if len(results) < 5:
+                try:
+                    sc_info = ydl.extract_info(f"scsearch5:{query}", download=False)
+                    if sc_info and 'entries' in sc_info:
+                        for entry in sc_info['entries']:
+                            if entry and (entry.get('url') or entry.get('webpage_url')):
+                                results.append({
+                                    'id': entry.get('id'),
+                                    'title': f"☁️ {entry.get('title')}",
+                                    'url': entry.get('url') or entry.get('webpage_url'),
+                                    'duration': entry.get('duration', 0),
+                                })
+                except Exception as e:
+                    logger.warning(f"SC search fail: {e}")
+                    
         return results
     except Exception as e:
-        logger.error(f"Search engine error: {e}")
+        logger.error(f"Global search error: {e}")
         return results
 
 
