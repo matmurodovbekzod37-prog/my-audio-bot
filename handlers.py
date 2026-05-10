@@ -234,7 +234,7 @@ async def cancel_search(callback: CallbackQuery):
     await callback.message.delete()
     await callback.answer("Qidiruv bekor qilindi.")
 
-@router.message(F.voice | F.audio)
+@router.message(F.voice | F.audio | F.video | F.video_note)
 async def handle_audio(message: Message, bot: Bot):
     if not await check_subscription(bot, message.from_user.id):
         await message.answer("⚠️ Avval kanalga obuna bo'ling!", reply_markup=get_sub_markup())
@@ -242,9 +242,21 @@ async def handle_audio(message: Message, bot: Bot):
 
     sent_message = await message.answer("🎧 **Musiqa tanilmoqda (Shazam)...**", parse_mode="Markdown")
     
-    file_id = message.voice.file_id if message.voice else message.audio.file_id
+    if message.voice:
+        file_id = message.voice.file_id
+    elif message.audio:
+        file_id = message.audio.file_id
+    elif message.video:
+        file_id = message.video.file_id
+    elif message.video_note:
+        file_id = message.video_note.file_id
+    else:
+        return
+
     file = await bot.get_file(file_id)
-    file_path = os.path.join(DOWNLOADS_DIR, f"{uuid.uuid4()}.ogg")
+    # Fayl kengaytmasini aniqlash
+    ext = file.file_path.split('.')[-1] if '.' in file.file_path else 'ogg'
+    file_path = os.path.join(DOWNLOADS_DIR, f"{uuid.uuid4()}.{ext}")
     await bot.download_file(file.file_path, file_path)
 
     shazam_result = await recognize_song(file_path)
