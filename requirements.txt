@@ -1,4 +1,4 @@
 aiogram
-yt-dlp>=2025.1.15
+yt-dlp[default]>=2025.1.15
 shazamio
 aiohttp
