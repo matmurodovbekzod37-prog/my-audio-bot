@@ -179,22 +179,25 @@ def _download_sync(url: str, format_type: str) -> dict:
 
 async def get_search_results(query: str, limit: int = 10) -> list:
     """
-    YouTube va SoundCloud dan bir vaqtning o'zida qidiradi (Parallel).
+    YouTube va SoundCloud dan parallel qidiradi va SoundCloud (Cloud ☁️) natijalarini birinchi o'ringa qo'yadi.
+    Chunki Render serverida SoundCloud yuklashlari mutlaqo bepul, barqaror va cheklovsiz ishlaydi!
     """
-    # Qidiruvni yaxshilash: musiqa ekanligini bildirish uchun 'audio' qo'shamiz
-    # Lekin agar foydalanuvchi juda qisqa narsa yozsa, o'zini qoldiramiz
     search_query = f"{query} audio" if len(query.split()) < 4 else query
     
     # Parallel qidiruv start
     yt_task = asyncio.to_thread(_search_provider, f"ytsearch10:{search_query}")
     sc_task = asyncio.to_thread(_search_provider, f"scsearch10:{search_query}")
     
-    results_lists = await asyncio.gather(yt_task, sc_task, return_exceptions=True)
+    results_lists = await asyncio.gather(sc_task, yt_task, return_exceptions=True)
     
+    # SoundCloud va YouTube natijalarini ajratib olamiz
+    sc_results = results_lists[0] if isinstance(results_lists[0], list) else []
+    yt_results = results_lists[1] if isinstance(results_lists[1], list) else []
+    
+    # Birinchi SoundCloud (☁️), keyin YouTube (📺) natijalarini joylashtiramiz
     combined_results = []
-    for res_list in results_lists:
-        if isinstance(res_list, list):
-            combined_results.extend(res_list)
+    combined_results.extend(sc_results)
+    combined_results.extend(yt_results)
             
     # Dublikatlarni URL bo'yicha olib tashlash
     unique_results = []
@@ -206,6 +209,7 @@ async def get_search_results(query: str, limit: int = 10) -> list:
             
     # Faqat limitgacha qaytarish
     return unique_results[:limit]
+
 
 def _search_provider(search_str: str) -> list:
     """Yt-dlp orqali berilgan manbadan tezkor qidiruv."""
