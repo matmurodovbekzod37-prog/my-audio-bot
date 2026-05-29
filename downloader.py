@@ -75,8 +75,8 @@ def _download_sync(url: str, format_type: str) -> dict:
         'referer': referer,
         'extractor_args': {
             'youtube': {
-                # Faqat eng ishonchli mijoz
-                'player_client': ['android'],
+                # Bir nechta mobil va veb mijozlarni sinab ko'rish orqali blokni aylanib o'tish
+                'player_client': ['ios', 'android', 'web_safari', 'mweb'],
             }
         },
     }
@@ -86,8 +86,7 @@ def _download_sync(url: str, format_type: str) -> dict:
 
     if format_type == 'audio':
         ydl_opts.update({
-            'format': 'ba/ba*',
-            'format_sort': ['abr:192', 'acodec:mp3'],
+            'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -145,78 +144,105 @@ def _download_sync(url: str, format_type: str) -> dict:
         err_str = str(e)
         logger.error(f"Download error: {err_str}")
         
-        # Foydalanuvchiga tushunarli xato xabari
-        if "Sign in to confirm" in err_str:
-            friendly_err = "YouTube bot ekanligimizni aniqladi. Iltimos, cookies.txt faylini yangilang."
+        # Foydalanuvchiga oqilona va yordam beruvchi xato xabari
+        if "Sign in to confirm" in err_str or "confirm your age" in err_str or "403: Forbidden" in err_str:
+            if "youtube.com" in url or "youtu.be" in url:
+                friendly_err = (
+                    "⚠️ **YouTube yuklash cheklovi (IP Blocked):**\n"
+                    "YouTube ushbu havola bo'yicha yuklashni vaqtincha chekladi (bot aniqlanganligi sababli).\n\n"
+                    "💡 **Nima qilish kerak?**\n"
+                    "Musiqani matn ko'rinishida yozib yuboring (masalan: `Sherali Jo'rayev Karvon`) va qidiruv natijalaridan SoundCloud **Cloud (☁️)** versiyasini tanlang! SoundCloud butunlay cheklovsiz va tezkor ishlaydi."
+                )
+            else:
+                friendly_err = (
+                    "⚠️ **Yuklash cheklovi:**\n"
+                    "Ushbu havoladan yuklashda bot chekloviga duch keldik.\n\n"
+                    "💡 **Nima qilish kerak?**\n"
+                    "Iltimos, musiqani nomi orqali oddiy matn ko'rinishida yuborib qidirib ko'ring!"
+                )
+        elif "Connection aborted" in err_str or "ConnectionResetError" in err_str or "10054" in err_str:
+            friendly_err = (
+                "⚠️ **Tarmoq cheklovi (Connection Reset):**\n"
+                "Ushbu musiqa provayderi (SoundCloud) server bilan aloqani uzdi (ehtimol hududiy cheklov yoki blokirovka sababli).\n\n"
+                "💡 **Nima qilish kerak?**\n"
+                "Iltimos, musiqani nomi orqali qayta qidirib ko'ring va ro'yxatdan boshqa variantni (masalan, YouTube 📺 versiyasini) tanlang!"
+            )
         elif "Requested format not available" in err_str:
-            friendly_err = "Ushbu formatdagi fayl topilmadi. Boshqa versiyani sinab ko'ring."
+            friendly_err = "⚠️ Ushbu formatdagi audio fayl topilmadi. Iltimos, boshqa variantni sinab ko'ring."
         elif "Video unavailable" in err_str:
-            friendly_err = "Video o'chirilgan yoki bloklangan."
+            friendly_err = "⚠️ Musiqa yoki video o'chirilgan yoxud bloklangan."
         else:
-            friendly_err = f"{err_str[:100]}"
+            friendly_err = f"⚠️ Yuklashda muammo yuz berdi: {err_str[:100]}"
             
         return {'success': False, 'error': friendly_err}
 
 
-async def get_search_results(query: str, limit: 10) -> list:
-    return await asyncio.to_thread(_get_search_results_sync, query, limit)
+async def get_search_results(query: str, limit: int = 10) -> list:
+    """
+    YouTube va SoundCloud dan bir vaqtning o'zida qidiradi (Parallel).
+    """
+    # Qidiruvni yaxshilash: musiqa ekanligini bildirish uchun 'audio' qo'shamiz
+    # Lekin agar foydalanuvchi juda qisqa narsa yozsa, o'zini qoldiramiz
+    search_query = f"{query} audio" if len(query.split()) < 4 else query
+    
+    # Parallel qidiruv start
+    yt_task = asyncio.to_thread(_search_provider, f"ytsearch10:{search_query}")
+    sc_task = asyncio.to_thread(_search_provider, f"scsearch10:{search_query}")
+    
+    results_lists = await asyncio.gather(yt_task, sc_task, return_exceptions=True)
+    
+    combined_results = []
+    for res_list in results_lists:
+        if isinstance(res_list, list):
+            combined_results.extend(res_list)
+            
+    # Dublikatlarni URL bo'yicha olib tashlash
+    unique_results = []
+    seen_urls = set()
+    for res in combined_results:
+        if res['url'] not in seen_urls:
+            unique_results.append(res)
+            seen_urls.add(res['url'])
+            
+    # Faqat limitgacha qaytarish
+    return unique_results[:limit]
 
-def _get_search_results_sync(query: str, limit: int) -> list:
+def _search_provider(search_str: str) -> list:
+    """Yt-dlp orqali berilgan manbadan tezkor qidiruv."""
     cookiefile = _get_cookiefile()
-    # Mobil User-Agent ko'proq ishonchli
-    user_agent = 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36'
+    user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        'ignore_config': True,
+        'extract_flat': True,  # JUDA MUHIM: qidiruvni tezlashtiradi
         'user_agent': user_agent,
         'noprogress': True,
     }
     
     if cookiefile:
         ydl_opts['cookiefile'] = cookiefile
-    
+        
     results = []
+    prefix = "📺" if "ytsearch" in search_str else "☁️"
+    
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # 1. YouTube Qidiruv
-            try:
-                # ytsearch: birinchi natijani tezroq oladi
-                yt_info = ydl.extract_info(f"ytsearch5:{query}", download=False)
-                if yt_info and 'entries' in yt_info:
-                    for entry in yt_info['entries']:
-                        if entry:
-                            results.append({
-                                'id': entry.get('id'),
-                                'title': f"📺 {entry.get('title')}",
-                                'url': entry.get('url') or entry.get('webpage_url'),
-                                'duration': entry.get('duration', 0),
-                            })
-            except Exception as e:
-                logger.warning(f"YT search fail: {e}")
-
-            # 2. SoundCloud Qidiruv (Agar YouTube kam natija bersa yoki xato bo'lsa)
-            if len(results) < 5:
-                try:
-                    sc_info = ydl.extract_info(f"scsearch5:{query}", download=False)
-                    if sc_info and 'entries' in sc_info:
-                        for entry in sc_info['entries']:
-                            if entry and (entry.get('url') or entry.get('webpage_url')):
-                                results.append({
-                                    'id': entry.get('id'),
-                                    'title': f"☁️ {entry.get('title')}",
-                                    'url': entry.get('url') or entry.get('webpage_url'),
-                                    'duration': entry.get('duration', 0),
-                                })
-                except Exception as e:
-                    logger.warning(f"SC search fail: {e}")
-                    
+            info = ydl.extract_info(search_str, download=False)
+            if info and 'entries' in info:
+                for entry in info['entries']:
+                    if entry:
+                        results.append({
+                            'id': entry.get('id'),
+                            'title': f"{prefix} {entry.get('title')}",
+                            'url': entry.get('url') or entry.get('webpage_url'),
+                            'duration': entry.get('duration', 0),
+                        })
         return results
     except Exception as e:
-        logger.error(f"Global search error: {e}")
-        return results
+        logger.warning(f"Search provider fail ({search_str}): {e}")
+        return []
 
 
 

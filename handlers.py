@@ -114,27 +114,31 @@ async def handle_text(message: Message, bot: Bot):
         url = urls[0]
         sent_message = await message.answer("⏳ **Link tahlil qilinmoqda...**", parse_mode="Markdown")
         
-        # YouTube linklaridan ID ajratib olish
+        # YouTube linklaridan ID ajratib olish (kuchaytirilgan regex)
         video_id = None
         if "youtube.com" in url or "youtu.be" in url:
             import re
-            match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
+            match = re.search(r"(?:v=|embed\/|watch\?v=|ytscreen\/|shorts\/|\/)([0-9A-Za-z_-]{11})", url)
             if match:
                 video_id = match.group(1)
         
-        if video_id:
+        # Keshni URL yoki video_id bo'yicha tekshirish
+        cached_data = db_cache.get_file_id(url)
+        if not cached_data and video_id:
             cached_data = db_cache.get_file_id(video_id)
-            if cached_data:
-                try:
-                    await sent_message.edit_text(f"⚡️ **{cached_data.get('title', 'Musiqa')}** keshdan yuborilmoqda...")
-                    await message.answer_audio(
-                        cached_data['file_id'],
-                        caption=f"✅ **{cached_data.get('title', 'Musiqa')}**\n\n⚡️ Tezkor yuklash (keshdan)\n🤖 @{BOT_USERNAME}"
-                    )
-                    await sent_message.delete()
-                    return
-                except Exception as e:
-                    logger.warning(f"Link keshidan yuborishda xato: {e}")
+            
+        if cached_data:
+            try:
+                await sent_message.edit_text(f"⚡️ **{cached_data.get('title', 'Musiqa')}** keshdan yuborilmoqda...")
+                await message.answer_audio(
+                    cached_data['file_id'],
+                    caption=f"✅ **{cached_data.get('title', 'Musiqa')}**\n\n⚡️ Tezkor yuklash (keshdan)\n🤖 @{BOT_USERNAME}",
+                    parse_mode="Markdown"
+                )
+                await sent_message.delete()
+                return
+            except Exception as e:
+                logger.warning(f"Link keshidan yuborishda xato: {e}")
 
         result = await download_media(url, 'audio')
         if result['success']:
@@ -150,10 +154,12 @@ async def handle_text(message: Message, bot: Bot):
             caption = f"🎵 **{result['title']}**\n\n📥 @{BOT_USERNAME} orqali yuklandi"
             msg = await message.answer_audio(audio, caption=caption, parse_mode="Markdown")
             
-            # Keshga saqlash
-            final_id = video_id or result.get('id')
-            if final_id and msg.audio:
-                db_cache.set_file_id(final_id, msg.audio.file_id, result['title'])
+            # Keshga saqlash (URL va ID bo'yicha)
+            if msg.audio:
+                db_cache.set_file_id(url, msg.audio.file_id, result['title'])
+                final_id = video_id or result.get('id')
+                if final_id:
+                    db_cache.set_file_id(final_id, msg.audio.file_id, result['title'])
                 
             await sent_message.delete()
             if os.path.exists(result['file_path']): os.remove(result['file_path'])
@@ -175,12 +181,13 @@ async def handle_text(message: Message, bot: Bot):
 
     user_searches[message.from_user.id] = results
     
-    response_text = f"🔍 **'{query}'** bo'yicha topilgan natijalar:\n\n"
+    response_text = f"✨ **'{query}'** bo'yicha eng yaxshi natijalar:\n\n"
     for i, res in enumerate(results):
         duration = format_duration(res['duration'])
-        response_text += f"{i+1}. **{res['title']}** ({duration})\n"
+        # Ikonka allaqachon res['title'] ichida bor
+        response_text += f"{i+1}. {res['title']} ({duration})\n"
     
-    response_text += "\n📥 Yuklab olish uchun raqamni bosing:"
+    response_text += "\n📥 **Yuklab olish uchun raqamni tanlang:**"
     
     await sent_message.edit_text(
         response_text, 
@@ -199,15 +206,22 @@ async def process_selection(callback: CallbackQuery, bot: Bot):
 
     selected = user_searches[user_id][idx]
     video_id = selected.get('id')
+    url = selected.get('url')
     
-    # Keshni tekshirish
-    cached_data = db_cache.get_file_id(video_id) if video_id else None
+    # Keshni tekshirish (URL yoki video_id bo'yicha)
+    cached_data = None
+    if url:
+        cached_data = db_cache.get_file_id(url)
+    if not cached_data and video_id:
+        cached_data = db_cache.get_file_id(video_id)
+        
     if cached_data:
         try:
             await callback.message.edit_text(f"⚡️ **{selected['title']}** keshdan yuborilmoqda...")
             await callback.message.answer_audio(
                 cached_data['file_id'], 
-                caption=f"✅ **{selected['title']}**\n\n⚡️ Tezkor yuklash (keshdan)\n🤖 @{BOT_USERNAME}"
+                caption=f"✅ **{selected['title']}**\n\n⚡️ Tezkor yuklash (keshdan)\n🤖 @{BOT_USERNAME}",
+                parse_mode="Markdown"
             )
             await callback.message.delete()
             return
@@ -231,9 +245,12 @@ async def process_selection(callback: CallbackQuery, bot: Bot):
         caption = f"✅ **{selected['title']}**\n\n🤖 @{BOT_USERNAME}"
         msg = await callback.message.answer_audio(audio, caption=caption, parse_mode="Markdown")
         
-        # Kelajak uchun keshga saqlash
-        if video_id and msg.audio:
-            db_cache.set_file_id(video_id, msg.audio.file_id, selected['title'])
+        # Kelajak uchun keshga saqlash (URL va ID bo'yicha)
+        if msg.audio:
+            if selected.get('url'):
+                db_cache.set_file_id(selected['url'], msg.audio.file_id, selected['title'])
+            if video_id:
+                db_cache.set_file_id(video_id, msg.audio.file_id, selected['title'])
             
         await callback.message.delete()
         if os.path.exists(result['file_path']): os.remove(result['file_path'])
@@ -290,10 +307,10 @@ async def handle_audio(message: Message, bot: Bot):
 
         user_searches[message.from_user.id] = results
         
-        response_text = f"✅ **Tanildi:** {title} - {subtitle}\n\n📥 Yuklash uchun versiyani tanlang:\n"
+        response_text = f"✅ **Musiqa tanildi:**\n🎼 **{title}** — {subtitle}\n\n📥 **Yuklash uchun versiyani tanlang:**\n"
         for i, res in enumerate(results):
             duration = format_duration(res['duration'])
-            response_text += f"{i+1}. **{res['title']}** ({duration})\n"
+            response_text += f"{i+1}. {res['title']} ({duration})\n"
         
         await sent_message.edit_text(
             response_text,
